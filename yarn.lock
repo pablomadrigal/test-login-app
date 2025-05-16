@@ -929,7 +929,7 @@
     "@noble/hashes" "~1.8.0"
     "@scure/base" "~1.2.5"
 
-"@scure/starknet@1.1.0":
+"@scure/starknet@1.1.0", "@scure/starknet@^1.1.0":
   version "1.1.0"
   resolved "https://registry.yarnpkg.com/@scure/starknet/-/starknet-1.1.0.tgz#d1902e053d98196e161b9b2c3996b20999094e7a"
   integrity sha512-83g3M6Ix2qRsPN4wqLDqiRZ2GBNbjVWfboJE/9UjfG+MHr6oDSu/CWgy8hsBSJejr09DkkL+l0Ze4KVrlCIdtQ==
@@ -971,6 +971,11 @@
   version "0.7.10"
   resolved "https://registry.yarnpkg.com/@starknet-io/types-js/-/types-js-0.7.10.tgz#d21dc973d0cd04d7b6293ce461f2f06a5873c760"
   integrity sha512-1VtCqX4AHWJlRRSYGSn+4X1mqolI1Tdq62IwzoU2vUuEE72S1OlEeGhpvd6XsdqXcfHmVzYfj8k1XtKBQqwo9w==
+
+"@starknet-io/types-js@^0.8.3":
+  version "0.8.3"
+  resolved "https://registry.yarnpkg.com/@starknet-io/types-js/-/types-js-0.8.3.tgz#e4344572b28f4808e6b2144a38cfeafc21ecf646"
+  integrity sha512-L9/NKH0k2rIEDcYuB8r8fjgVaCXrXaju/JVOn8/EzuffNFWArHwQfz38dpwOuN05vHO+KykpeQW73Ro/HoR9xA==
 
 "@starkware-industries/starkware-crypto-utils@^0.2.1":
   version "0.2.1"

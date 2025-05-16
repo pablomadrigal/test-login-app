@@ -10,7 +10,7 @@ const clientId = import.meta.env.VITE_WEBAUTH_CLIENT_ID || "";
 const rcpUrl = import.meta.env.VITE_RPC_URL || "";
 const web3Network = import.meta.env.VITE_WEB3_NETWORK == "devnet" ? WEB3AUTH_NETWORK.SAPPHIRE_DEVNET : WEB3AUTH_NETWORK.SAPPHIRE_DEVNET;
 const anvuUrl = import.meta.env.VITE_ANVU_URL || "";
-const anvuApiKey = import.meta.env.VITE_ANVU_API_KEY || "";
+const anvuApiKey = import.meta.env.VITE_AVNU_PAYMASTER_API_KEY || "";
 
 const chainConfig = {
     chainNamespace: CHAIN_NAMESPACES.OTHER,
@@ -57,7 +57,7 @@ export const useWeb3Auth = () => {
                 if (web3authInstance.connectedAdapterName) {
                     setLoggedIn(true);
                 }
-                setRpcProvider(new RpcProvider({ nodeUrl: rcpUrl  }));
+                setRpcProvider(new RpcProvider({ nodeUrl: rcpUrl }));
             } catch (error) {
                 console.error(error);
             }
@@ -112,7 +112,7 @@ export const useWeb3Auth = () => {
         }
     };
 
-    const getStarkAccount = async () => {
+    const getStarknetKeyPair = async () => {
         if (!provider) {
             console.error("provider not initialized yet");
             return;
@@ -120,6 +120,29 @@ export const useWeb3Auth = () => {
         try {
             const privateKey = await provider.request({ method: "private_key" }) as string;
             const keyPair = starkwareCrypto.ec.keyFromPrivate(privateKey, "hex");
+            return keyPair;
+        } catch (error) {
+            console.error(error);
+        }
+        
+    }
+
+    const getStarkAccount = async () => {
+        if (!provider) {
+            console.error("provider not initialized yet");
+            return;
+        }
+        try {
+            const privateKey = await provider.request({ method: "private_key" }) as string;
+            console.log('private key', privateKey);
+
+            //const keyPair = starkwareCrypto.keyDerivation.getKeyPairFromPath(privateKey, "m/12381/3600/0/0/0");
+            const keyPair = starkwareCrypto.ec.keyFromPrivate(privateKey, "hex");
+            console.log('keyPair', keyPair);
+            const foo = keyPair.getPrivate(true, "hex");
+            console.log('private starknet key', foo);
+            const foo2 = keyPair.getPublic(true, "hex");
+            console.log('public starknet key', foo2);
             const account = starkwareCrypto.ec.keyFromPublic(
                 keyPair.getPublic(true, "hex"),
                 "hex"
@@ -138,7 +161,7 @@ export const useWeb3Auth = () => {
         try {
             const account = await getStarkAccount();
             if (account) {
-                const publicKeyX =`0x${account.pub.getX().toString("hex")}` ;
+                const publicKeyX = `0x${account.pub.getX().toString("hex")}`;
                 return publicKeyX;
             }
         } catch (error) {
@@ -190,33 +213,64 @@ export const useWeb3Auth = () => {
                     0
                 );
 
-                const deployAccountPayload = {
-                    classHash: ETH_ACCOUNT_CLASS_HASH,
-                    constructorCalldata: ArgentAAConstructorCallData,
-                    addressSalt: AccountHexContractAddress,
-                };
-                
-                const privateKey = await provider.request({ method: "private_key" }) as string;
-                const accountAX = new Account(rpcProvider, AccountHexContractAddress, `0x${privateKey}`);
-
-                const foo = accountAX.
-
                 const anvuResponse = await fetch(`${anvuUrl}/paymaster/v1/accounts/${publicKeyHex}/compatible`, {
                     method: "GET"
                 });
 
-                if (!anvuResponse.ok) {
-                    const anvuResponseData = await fetch(`${anvuUrl}/paymaster/v1/deploy-account`, {
-                        method: "POST",
-                        body: JSON.stringify(deployAccountPayload),
-                        headers: {
-                            "Content-Type": "application/json",
-                            "api-key": anvuApiKey,
-                        },
-                    });
-                    console.log(anvuResponseData);
-                    return;
+                const deploymentData = {
+                    class_hash: ARGENT_ACCOUNT_CLASS_HASH,
+                    salt: AccountHexContractAddress,
+                    unique: true,
+                    calldata: ArgentAAConstructorCallData,
+                    sigdata: []
+                };
+
+                const buildTypedDataResponse = await fetch(`${anvuUrl}/paymaster/v1/build-typed-data`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "api-key": anvuApiKey,
+                    },
+                    body: JSON.stringify({
+                        userAddress: AccountHexContractAddress,
+                        calls: [],
+                        accountClassHash: ARGENT_ACCOUNT_CLASS_HASH,
+                        deploymentData
+                    })
+                });
+
+                if (!buildTypedDataResponse.ok) {
+                    throw new Error('Failed to build typed data');
                 }
+
+                const typedData = await buildTypedDataResponse.json();
+                console.log(typedData);
+
+                const keyPair = await getStarknetKeyPair();
+                
+                const signature = await starkwareCrypto.sign(keyPair, JSON.stringify(typedData))
+                console.log('signature', signature);
+
+                const executeResponse = await fetch(`${anvuUrl}/paymaster/v1/execute`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "api-key": anvuApiKey,
+                    },
+                    body: JSON.stringify({
+                        userAddress: AccountHexContractAddress,
+                        typedData: typedData,
+                        signature: [signature],
+                        deploymentData
+                    })
+                });
+
+                if (!executeResponse.ok) {
+                    throw new Error('Failed to execute deployment');
+                }
+
+                const executeResult = await executeResponse.json();
+                console.log('Deployment transaction hash:', executeResult.transactionHash);
 
                 //const { transaction_hash: AXdAth, contract_address: AXcontractFinalAddress } = await accountAX.deployAccount(deployAccountPayload);
                 //console.log('transaction_hash', AXdAth);
