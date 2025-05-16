@@ -4,14 +4,13 @@ import { CHAIN_NAMESPACES, UX_MODE, WALLET_ADAPTERS, WEB3AUTH_NETWORK, type IPro
 import { CommonPrivateKeyProvider } from "@web3auth/base-provider";
 import { AuthAdapter } from "@web3auth/auth-adapter";
 import * as starkwareCrypto from "@starkware-industries/starkware-crypto-utils";
-import { Account, addAddressPadding, CallData, encode, EthSigner, hash, RpcProvider, cairo, stark, constants } from "starknet";
-
-import CompiledAccountContractAbi from "../abi/ArgentAccount.json";
-import compiledEthAccount from "../abi/openzeppelin_EthAccountUpgradeable090.sierra.json";
+import { Account, CallData, hash, RpcProvider } from "starknet";
 
 const clientId = import.meta.env.VITE_WEBAUTH_CLIENT_ID || "";
 const rcpUrl = import.meta.env.VITE_RPC_URL || "";
 const web3Network = import.meta.env.VITE_WEB3_NETWORK == "devnet" ? WEB3AUTH_NETWORK.SAPPHIRE_DEVNET : WEB3AUTH_NETWORK.SAPPHIRE_DEVNET;
+const anvuUrl = import.meta.env.VITE_ANVU_URL || "";
+const anvuApiKey = import.meta.env.VITE_ANVU_API_KEY || "";
 
 const chainConfig = {
     chainNamespace: CHAIN_NAMESPACES.OTHER,
@@ -30,6 +29,7 @@ export const useWeb3Auth = () => {
     const [web3auth, setWeb3auth] = useState<Web3AuthNoModal | null>(null);
     const [provider, setProvider] = useState<IProvider | null>(null);
     const [loggedIn, setLoggedIn] = useState<boolean>(false);
+    const [rpcProvider, setRpcProvider] = useState<RpcProvider | null>(null);
 
     useEffect(() => {
         const init = async () => {
@@ -57,9 +57,9 @@ export const useWeb3Auth = () => {
                 if (web3authInstance.connectedAdapterName) {
                     setLoggedIn(true);
                 }
+                setRpcProvider(new RpcProvider({ nodeUrl: rcpUrl  }));
             } catch (error) {
                 console.error(error);
-                console.log(JSON.stringify(error, null, 2));
             }
         };
 
@@ -68,7 +68,7 @@ export const useWeb3Auth = () => {
 
     const login = async () => {
         if (!web3auth) {
-            console.log("web3auth not initialized yet");
+            console.error("web3auth not initialized yet");
             return;
         }
         try {
@@ -87,7 +87,7 @@ export const useWeb3Auth = () => {
 
     const logout = async () => {
         if (!web3auth) {
-            console.log("web3auth not initialized yet");
+            console.error("web3auth not initialized yet");
             return;
         }
         try {
@@ -101,7 +101,7 @@ export const useWeb3Auth = () => {
 
     const getUserInfo = async () => {
         if (!web3auth) {
-            console.log("web3auth not initialized yet");
+            console.error("web3auth not initialized yet");
             return;
         }
         try {
@@ -114,7 +114,7 @@ export const useWeb3Auth = () => {
 
     const getStarkAccount = async () => {
         if (!provider) {
-            console.log("provider not initialized yet");
+            console.error("provider not initialized yet");
             return;
         }
         try {
@@ -124,23 +124,21 @@ export const useWeb3Auth = () => {
                 keyPair.getPublic(true, "hex"),
                 "hex"
             );
-            console.log("account", account);
             return account;
         } catch (error) {
             console.error(error);
         }
     };
 
-    const getStarkKey = async () => {
+    const getStarkNetPublicKey = async () => {
         if (!provider) {
-            console.log("provider not initialized yet");
+            console.error("provider not initialized yet");
             return;
         }
         try {
             const account = await getStarkAccount();
             if (account) {
-                const publicKeyX = account.pub.getX().toString("hex");
-                console.log(publicKeyX);
+                const publicKeyX =`0x${account.pub.getX().toString("hex")}` ;
                 return publicKeyX;
             }
         } catch (error) {
@@ -148,106 +146,96 @@ export const useWeb3Auth = () => {
         }
     };
 
-    const calcultePublicAddress = async () => {
+    const calculteAccountPublicAddress = async () => {
         if (!provider) {
-            console.log("provider not initialized yet");
+            console.error("provider not initialized yet");
             return;
         }
         try {
-            const account = await getStarkAccount();
-
-            if (account) {
-                const myCallData = new CallData(compiledEthAccount.abi);
-                const ethFullPublicKey = account.pub.getX().toString("hex");
-                const accountETHconstructorCalldata = myCallData.compile('constructor', {
-                    public_key: ethFullPublicKey,
+            const publicKeyHex = await getStarkNetPublicKey();
+            if (publicKeyHex) {
+                const ArgentAAConstructorCallData = CallData.compile({
+                    owner: publicKeyHex,
+                    guardian: '0',
                 });
-                const salt = ethFullPublicKey.low;
-                const accountEthClassHash = hash.calculateContractAddressFromHash(salt, ETH_ACCOUNT_CLASS_HASH, accountETHconstructorCalldata, 0);
-                console.log('Pre-calculated account address=', accountEthClassHash);
+                const AccountHexContractAddress = hash.calculateContractAddressFromHash(
+                    publicKeyHex,
+                    ARGENT_ACCOUNT_CLASS_HASH,
+                    ArgentAAConstructorCallData,
+                    0
+                );
+                return AccountHexContractAddress;
             }
         } catch (error) {
             console.error(error);
         }
     }
 
-    //basado en https://github.com/PhilippeR26/starknet.js-workshop-typescript/blob/bbd1f8c1184bbe9af52353678d3f909a65422cf8/src/scripts/Starknet13/Starknet13-goerli/4.createNewETHaccount.ts#L31
-    //por documentacion desactualizada
     const deployAccount = async () => {
         if (!provider) {
-            console.log("provider not initialized yet");
+            console.error("provider not initialized yet");
             return;
         }
         try {
-            const privateKeyETH = await provider.request({ method: "private_key" }) as string;
-            console.log('privateKeyETH', privateKeyETH);
-            const ethSigner = new EthSigner(`0x${privateKeyETH}`);
-            const ethFullPublicKey = await ethSigner.getPubKey();
-            const pubKeyETHx = cairo.uint256(addAddressPadding(encode.addHexPrefix(ethFullPublicKey.slice(4, -64))));
-            const salt = pubKeyETHx.low;
+            const publicKeyHex = await getStarkNetPublicKey();
+            if (publicKeyHex && rpcProvider) {
+                const ArgentAAConstructorCallData = CallData.compile({
+                    owner: publicKeyHex,
+                    guardian: '0',
+                });
+                const AccountHexContractAddress = hash.calculateContractAddressFromHash(
+                    publicKeyHex,
+                    ARGENT_ACCOUNT_CLASS_HASH,
+                    ArgentAAConstructorCallData,
+                    0
+                );
 
-            const starkProvider = new RpcProvider({ nodeUrl: rcpUrl });
-            const myCallData = new CallData(compiledEthAccount.abi);
+                const deployAccountPayload = {
+                    classHash: ETH_ACCOUNT_CLASS_HASH,
+                    constructorCalldata: ArgentAAConstructorCallData,
+                    addressSalt: AccountHexContractAddress,
+                };
                 
-            console.log('ethFullPublicKey', ethFullPublicKey);
-            const accountETHconstructorCalldata = myCallData.compile('constructor', {
-                public_key: ethFullPublicKey,
-            });
-            const accountEthClassHash = hash.calculateContractAddressFromHash(salt, ETH_ACCOUNT_CLASS_HASH, accountETHconstructorCalldata, 0);
-            console.log('accountEthClassHash', accountEthClassHash);
-            const starknetAccount = new Account(starkProvider, ETH_ACCOUNT_CLASS_HASH, ethSigner, undefined, constants.TRANSACTION_VERSION.V3);
-            console.log('starknetAccount', starknetAccount);
-            const deployPayload = {
-                classHash: ETH_ACCOUNT_CLASS_HASH,
-                constructorCalldata: accountETHconstructorCalldata,
-                addressSalt: salt,
-            };
-            const { suggestedMaxFee: feeDeploy } = await starknetAccount.estimateAccountDeployFee(deployPayload);
-            console.log('feeDeploy', feeDeploy);
-            /*const { transaction_hash, contract_address } = await starknetAccount.deployAccount(
-                deployPayload,
-                { maxFee: stark.estimatedFeeToMaxFee(feeDeploy, 100) }
-                // Extra fee to fund the validation of the transaction
-            );*/
-            //await starkProvider.waitForTransaction(transaction_hash);
+                const privateKey = await provider.request({ method: "private_key" }) as string;
+                const accountAX = new Account(rpcProvider, AccountHexContractAddress, `0x${privateKey}`);
+
+                const foo = accountAX.
+
+                const anvuResponse = await fetch(`${anvuUrl}/paymaster/v1/accounts/${publicKeyHex}/compatible`, {
+                    method: "GET"
+                });
+
+                if (!anvuResponse.ok) {
+                    const anvuResponseData = await fetch(`${anvuUrl}/paymaster/v1/deploy-account`, {
+                        method: "POST",
+                        body: JSON.stringify(deployAccountPayload),
+                        headers: {
+                            "Content-Type": "application/json",
+                            "api-key": anvuApiKey,
+                        },
+                    });
+                    console.log(anvuResponseData);
+                    return;
+                }
+
+                //const { transaction_hash: AXdAth, contract_address: AXcontractFinalAddress } = await accountAX.deployAccount(deployAccountPayload);
+                //console.log('transaction_hash', AXdAth);
+                //console.log('contract_address', AXcontractFinalAddress);
+            }
         } catch (error) {
             console.error(error);
         }
     }
 
-
-const deployAccountTest = async () => {
-    if (!provider) {
-        console.log("provider not initialized yet");
-        return;
-    }
-    try {
-        console.log("deployAccount");
-        const account = await getStarkAccount();
-        if (account) {
-
-            const contract = JSON.parse(JSON.stringify(CompiledAccountContractAbi));
-
-            /*const response = await defaultProvider.deployContract({
-                contract,
-            });*/
-
-            //return response;
-        }
-    } catch (error) {
-        console.error(error);
-    }
-};
-
-
-return {
-    loggedIn,
-    provider,
-    login,
-    logout,
-    getUserInfo,
-    getStarkAccount,
-    getStarkKey,
-    deployAccount,
-};
+    return {
+        loggedIn,
+        provider,
+        login,
+        logout,
+        getUserInfo,
+        getStarkAccount,
+        getStarkNetPublicKey,
+        calculteAccountPublicAddress,
+        deployAccount,
+    };
 }; 

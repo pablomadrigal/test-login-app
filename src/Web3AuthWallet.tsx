@@ -8,30 +8,41 @@ function Web3AuthWallet() {
         logout,
         getUserInfo,
         getStarkAccount,
-        getStarkKey,
+        getStarkNetPublicKey,
         deployAccount,
+        calculteAccountPublicAddress,
     } = useWeb3Auth();
+
+    const handleClick = async (funcName: string, func: () => Promise<any>) => {
+        const result = await func();
+        console.log(funcName, result);
+    }
 
     const loggedInView = (
         <>
             <div className="flex-container">
                 <div>
-                    <button onClick={getUserInfo} className="card">
+                    <button onClick={() => handleClick('getUserInfo', getUserInfo)} className="card">
                         Get User Info
                     </button>
                 </div>
                 <div>
-                    <button onClick={getStarkAccount} className="card">
+                    <button onClick={() => handleClick('getStarkAccount', getStarkAccount)} className="card">
                         Get Stark Accounts
                     </button>
                 </div>
                 <div>
-                    <button onClick={getStarkKey} className="card">
+                    <button onClick={() => handleClick('getStarkNetPublicKey', getStarkNetPublicKey)} className="card">
                         Get Stark Key
                     </button>
                 </div>
                 <div>
-                    <button onClick={deployAccount} className="card">
+                    <button onClick={() => handleClick('calculteAccountPublicAddress', calculteAccountPublicAddress)} className="card">
+                        Calculte Public Address
+                    </button>
+                </div>
+                <div>
+                    <button onClick={() => handleClick('deployAccount', deployAccount)} className="card">
                         Deploy Account
                     </button>
                 </div>
